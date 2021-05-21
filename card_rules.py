@@ -1,5 +1,5 @@
 import random
-from itertools import cycle, islice, filterfalse
+from itertools import cycle, islice
 
 number_name_dict = {
     1: "Ace",
@@ -7,6 +7,7 @@ number_name_dict = {
     12: "Queen",
     13: "King"
 }
+
 
 class Suit:
     def __init__(self, name):
@@ -45,15 +46,17 @@ class Card:
     def __str__(self):
         return Card.number_to_name(self.number) + " of " +self.suit.name
 
-    def __comp__(self, other):
-        own_priority = self.priority
-        other_priority = other.priority
-        return own_priority.__comp__(other_priority)
+    def __lt__(self, other):
+        return (self.priority < other.priority)
+
+    def __eq__(self, other):
+        return (self.priority == other.priority)
 
 
 class PresidentPlay:
     """Wrapper around a tuple of cards of the same number"""
-    def __init__(self, cards):
+    def __init__(self, player, *cards):
+        self.player = player
         self.cards = cards
         self.card_count = len(cards)
         self.first_card = self.cards[0]
@@ -61,28 +64,41 @@ class PresidentPlay:
     def __comp__(self, other):
         return self.first_card.__comp__(other.first_card)
 
-    def check_legal(self):
+    def __str__(self):
+        return str(self.cards)
+
+    def is_legal(self):
         for card in self.cards:
-            if card != self.first_card:
+            if card != self.first_card or card not in self.player.hand:
                 return False
         return True
 
 
 class PresidentPlayer:
-    def __init__(self, hand=None):
+    def __init__(self, hand=None, name=""):
         if hand is None:
-            self.hand = []
+            self._hand = []
         else:
             self.hand = hand
+        self.name = name
 
     def print_hand(self):
         for card in self.hand:
             print(card)
 
+    @property
+    def hand(self):
+        self._hand.sort()
+        return self._hand
+
+    @hand.setter
+    def hand(self, value):
+        self._hand = value
+
     def remove_play(self, play):
         pass
 
-    def get_next_play(self):
+    def get_next_play(self, game):
         raise NotImplementedError("Implement this method")
 
 
@@ -99,14 +115,12 @@ def create_deck():
 
 
 class PresidentGame:
-    def __init__(self, player_list):
+    def __init__(self, player_list, starting_player_index=0):
         self.player_list = player_list
         self.winning_order = []
         self.card_stack = []
         self.player_count = len(player_list)
-
-    def player_iterator(self):
-        pass
+        self.current_player_index = starting_player_index
 
     def deal_hands(self, deck):
         for player in self.player_list:
@@ -114,21 +128,12 @@ class PresidentGame:
         for card, player in zip(deck, cycle(self.player_list)):
             player.hand.append(card)
 
-    def get_player_iterable(self, starting_player_index, reverse=False):
-
-        if reverse:
-            loop_over = reversed(self.player_list)
-            starting_index = (self.player_count - 1) - starting_player_index
-        else:
-            loop_over = self.player_list
-            starting_index = starting_player_index
-
+    def get_player_iterable(self, starting_player_index):
         # make an iterable cycle which starts at the starting player
         player_cycle = islice(
-            cycle(loop_over),
-            starting_index, None
+            cycle(self.player_list),
+            starting_player_index, None
         )
-
         # filter out the players with empty hands
         player_iterable = filter(
             lambda player: player.hand,
@@ -138,7 +143,7 @@ class PresidentGame:
         return player_iterable
 
     def play_hand(self, starting_player_index):
-
+        """"""
         player_iterable = self.get_player_iterable(starting_player_index)
 
         last_player_to_play = None
@@ -149,24 +154,20 @@ class PresidentGame:
             # if the player skips, do nothing
             if next_play is None:
                 continue
-
             # if there are cards on the table, skip the player if the plays are equal and check the play is legal
             if current_play is not None:
                 if next_play == current_play:
                     skipped_player = player_iterable.__next__()
-                elif next_play < current_play:
+                elif next_play < current_play or not next_play.is_legal():
                     raise IllegalPlayException("A player tried to play lower than the current play")
-
             # remove the play from the player's hand and put them on the winning list if they have no more players
             current_player.remove_play(next_play)
             if not current_player.hand:
                 self.winning_order.append(current_player)
-
             # if everyone else skipped, break
             if current_player is last_player_to_play:
                 hand_winner_index = self.player_list.index_of(current_player)
                 break
-
             # record that this player played and put their play at the top of the pile
             last_player_to_play = current_player
             current_play = next_play
@@ -176,10 +177,18 @@ class PresidentGame:
     def start_game(self):
         deck = create_deck()
         cards_to_remove = 52 % self.player_count
-        deck = deck[:cards_to_remove]
+        deck = deck[cards_to_remove:]
         random.shuffle(deck)
 
         self.deal_hands(deck)
         current_player_index = 0
-        while len(self.winning_order) != self.player_count:
-            hand_winner_index = self.play_hand(current_player_index)
+
+        while self.active_players() != 0:
+            # Go backwards starting from the current player until we find someone who's hand has cards
+            while not self.player_list[current_player_index].hand:
+                current_player_index = (current_player_index - 1) % self.player_count
+            # Play a hand and return the index of who "won" the hand
+            current_player_index = self.play_hand(current_player_index)
+
+    def active_players(self):
+        return self.player_count - len(self.winning_order)
