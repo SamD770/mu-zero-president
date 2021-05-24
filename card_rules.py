@@ -44,7 +44,7 @@ class Card:
             return self.number
 
     def __str__(self):
-        return Card.number_to_name(self.number) + " of " +self.suit.name
+        return Card.number_to_name(self.number) + " of " + self.suit.name
 
     def __lt__(self, other):
         return (self.priority < other.priority)
@@ -53,10 +53,10 @@ class Card:
         return (self.priority == other.priority)
 
 
-class PresidentPlay:
+class PresidentAction:
     """Wrapper around a tuple of cards of the same number"""
-    def __init__(self, player, *cards):
-        self.player = player
+    def __init__(self, agent, *cards):
+        self.agent = agent
         self.cards = cards
         self.card_count = len(cards)
         self.first_card = self.cards[0]
@@ -67,46 +67,35 @@ class PresidentPlay:
     def __str__(self):
         return str(self.cards)
 
+    def is_pass(self):
+        return (self.cards is None)
+
     def is_legal(self):
         for card in self.cards:
-            if card != self.first_card or card not in self.player.hand:
+            if card != self.first_card or card not in self.agent.hand:
                 return False
         return True
 
 
-class PresidentPlayer:
-    def __init__(self, hand=None, name=""):
-        if hand is None:
-            self._hand = []
-        else:
-            self.hand = hand
+class PresidentAgent:
+    def __init__(self, name=""):
         self.name = name
 
-    def print_hand(self):
-        for card in self.hand:
-            print(card)
+    def observe_action(self, new_action: PresidentAction):
+        raise NotImplementedError("Implement this method")
 
-    @property
-    def hand(self):
-        self._hand.sort()
-        return self._hand
+    def get_next_action(self, hand: list[Card]) -> PresidentAction:
+        raise NotImplementedError("Implement this method")
 
-    @hand.setter
-    def hand(self, value):
-        self._hand = value
-
-    def remove_play(self, play):
-        pass
-
-    def get_next_play(self, game):
+    def handle_illegal_action(self):
         raise NotImplementedError("Implement this method")
 
 
-class IllegalPlayException(Exception):
+class IllegalActionException(Exception):
     pass
 
 
-def create_deck():
+def create_deck()-> list[Card]:
     deck = []
     for i in range(1, 14):
         for suit in suits:
@@ -115,80 +104,105 @@ def create_deck():
 
 
 class PresidentGame:
-    def __init__(self, player_list, starting_player_index=0):
-        self.player_list = player_list
+    def __init__(self, agent_list, starting_agent_index=0):
+        self.agent_list = agent_list
+        self.hand_list = self.get_blank_hands()
+        self.top_of_card_stack = None
         self.winning_order = []
-        self.card_stack = []
-        self.player_count = len(player_list)
-        self.current_player_index = starting_player_index
+        self.agent_count = len(agent_list)
+        self.current_agent_index = starting_agent_index
+
+    def get_blank_hands(self):
+        return [[] for _ in self.agent_list]
 
     def deal_hands(self, deck):
-        for player in self.player_list:
-            player.hand = []
-        for card, player in zip(deck, cycle(self.player_list)):
-            player.hand.append(card)
+        self.hand_list = self.get_blank_hands()
+        for card, hand in zip(deck, cycle(self.hand_list)):
+            hand.append(card)
+        for hand in self.hand_list:
+            hand.sort()
 
-    def get_player_iterable(self, starting_player_index):
-        # make an iterable cycle which starts at the starting player
-        player_cycle = islice(
-            cycle(self.player_list),
-            starting_player_index, None
+    def get_agent_iterable(self, starting_agent_index):
+        # make an iterable cycle which starts at the starting agent
+        agent_cycle = islice(
+            cycle(zip(self.agent_list, self.hand_list)),
+            starting_agent_index, None
         )
-        # filter out the players with empty hands
-        player_iterable = filter(
-            lambda player: player.hand,
-            player_cycle
+        # filter out the agents with empty hands
+        agent_iterable = filter(
+            lambda agent, hand: hand,
+            agent_cycle
         )
+        return agent_iterable
 
-        return player_iterable
+    def update_agents(self, previous_action: PresidentAction) -> None:
+        """Remove the cards from the player who played them and update all the players with the action played."""
+        for agent, hand in zip(self.agent_list, self.hand_list):
+            agent.observe_action(previous_action)
+            if agent is previous_action.agent:
+                for card in previous_action.cards:
+                    hand.remove(card)
 
-    def play_hand(self, starting_player_index):
+    def do_action(self, action: PresidentAction) -> None:
+        """Update the players with what action has been played, update the top of the card stack"""
+        self.update_agents(action)
+        if not action.is_pass():
+            self.top_of_card_stack = action.cards
+
+    def is_legal(self, action: PresidentAction) -> bool:
+        pass
+
+    def play_hand(self, starting_agent_index):
         """"""
-        player_iterable = self.get_player_iterable(starting_player_index)
+        agent_iterable = self.get_agent_iterable(starting_agent_index)
+        last_agent_to_play = None
 
-        last_player_to_play = None
-        current_play = None
+        for current_agent, hand in agent_iterable:
+            legal_action = False
 
-        for current_player in player_iterable:
-            next_play = current_player.get_next_play(self)
-            # if the player skips, do nothing
-            if next_play is None:
+            while not legal_action:
+                next_action = current_agent.get_next_action(self, hand)
+                if next_action.is_legal():
+                    legal_action = True
+                else:
+                    current_agent.handle_illegal_action()
+
+            # if the agent passes, do nothing
+            if next_action.is_pass():
                 continue
-            # if there are cards on the table, skip the player if the plays are equal and check the play is legal
-            if current_play is not None:
-                if next_play == current_play:
-                    skipped_player = player_iterable.__next__()
-                elif next_play < current_play or not next_play.is_legal():
-                    raise IllegalPlayException("A player tried to play lower than the current play")
-            # remove the play from the player's hand and put them on the winning list if they have no more players
-            current_player.remove_play(next_play)
-            if not current_player.hand:
-                self.winning_order.append(current_player)
+
+            # If there are cards on the table, skip the next agent if the plays are equal
+            if self.top_of_card_stack is not None:
+                if self.top_of_card_stack == next_action.cards:
+                    skipped_agent, skipped_hand = agent_iterable.__next__()
+            # Remove the cards from this player's hand and put them on the winning list if they have no more.
+            self.do_action(next_action)
+            if not hand:
+                self.winning_order.append(current_agent)
             # if everyone else skipped, break
-            if current_player is last_player_to_play:
-                hand_winner_index = self.player_list.index_of(current_player)
+            if current_agent is last_agent_to_play:
+                hand_winner_index = self.agent_list.index_of(current_agent)
                 break
-            # record that this player played and put their play at the top of the pile
-            last_player_to_play = current_player
-            current_play = next_play
+            # record that this agent played
+            last_agent_to_play = current_agent
 
         return hand_winner_index
 
     def start_game(self):
         deck = create_deck()
-        cards_to_remove = 52 % self.player_count
+        cards_to_remove = 52 % self.agent_count
         deck = deck[cards_to_remove:]
         random.shuffle(deck)
 
         self.deal_hands(deck)
-        current_player_index = 0
+        current_agent_index = 0
 
-        while self.active_players() != 0:
-            # Go backwards starting from the current player until we find someone who's hand has cards
-            while not self.player_list[current_player_index].hand:
-                current_player_index = (current_player_index - 1) % self.player_count
+        while self.active_agents() != 0:
+            # Go backwards starting from the current agent until we find someone who's hand has cards
+            while not self.hand_list[current_agent_index]:
+                current_agent_index = (current_agent_index - 1) % self.agent_count
             # Play a hand and return the index of who "won" the hand
-            current_player_index = self.play_hand(current_player_index)
+            current_agent_index = self.play_hand(current_agent_index)
 
-    def active_players(self):
-        return self.player_count - len(self.winning_order)
+    def active_agents(self):
+        return self.agent_count - len(self.winning_order)
