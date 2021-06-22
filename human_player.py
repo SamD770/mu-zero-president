@@ -43,17 +43,10 @@ def card_sequence_to_string(cards):
 
 def string_to_card_tuple(card_strings):
     splitted = card_strings.split(" ")
-    return CardTuple(tuple(string_to_card(card_string) for card_string in splitted))
+    return CardTuple.from_iterable(string_to_card(card_string) for card_string in splitted)
 
 
 class HumanPresidentAgent(PresidentAgent):
-    def observe_action(self, new_action: PresidentAction):
-        if new_action.is_pass:
-            print(f"{new_action.agent.name} passed")
-        else:
-            cards_string = card_sequence_to_string(new_action.cards)
-            print(f"{new_action.agent.name} played {cards_string}")
-
     def get_next_action(self) -> PresidentAction:
         counter = len(self.observation_buffer.action_list)
         for action in reversed(self.observation_buffer.action_list):
@@ -62,7 +55,7 @@ class HumanPresidentAgent(PresidentAgent):
             else:
                 counter -= 1
         for action in self.observation_buffer.action_list[counter:]:
-            self.observe_action(action)
+            self.print_observation(action)
         print(f"Player {self.name}'s turn")
         print("Your hand is:")
         hand_string = card_sequence_to_string(self.observation_buffer.player_hand)
@@ -83,6 +76,13 @@ class HumanPresidentAgent(PresidentAgent):
     def handle_reward(self, reward_value):
         print(f"You got a reward of {reward_value}")
 
+    def print_observation(self, new_action: PresidentAction):
+        if new_action.is_pass:
+            print(f"{new_action.agent.name} passed")
+        else:
+            cards_string = card_sequence_to_string(new_action.cards)
+            print(f"{new_action.agent.name} played {cards_string}")
+
     def get_action_from_string(self, new_action_string: str) -> PresidentAction:
         if new_action_string == "pass":
             cards = CardTuple.create_empty()
@@ -90,12 +90,3 @@ class HumanPresidentAgent(PresidentAgent):
             cards = string_to_card_tuple(new_action_string)
         return PresidentAction(self, cards)
 
-
-player_a = HumanPresidentAgent(name="A")
-player_b = HumanPresidentAgent(name="B")
-player_c = HumanPresidentAgent(name="C")
-player_d = HumanPresidentAgent(name="D")
-
-my_game = PresidentGame([player_a, player_b, player_c, player_d])
-
-my_game.start_game()

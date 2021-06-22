@@ -86,6 +86,10 @@ class CardTuple:
     def create_empty():
         return CardTuple(tuple())
 
+    @staticmethod
+    def from_iterable(card_iterable):
+        return CardTuple(tuple(card_iterable))
+
 
 class PresidentAction:
     def __init__(self, agent: 'PresidentAgent', cards: CardTuple):
@@ -245,7 +249,7 @@ class PresidentGame:
 
     def get_legal_play(self, current_agent: PresidentAgent, hand: list) -> PresidentAction:
         while True:
-            next_action = current_agent.get_next_action(hand)
+            next_action = current_agent.get_next_action()
             if next_action.is_legal(hand, self.top_of_card_stack):
                 return next_action
             else:

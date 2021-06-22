@@ -20,6 +20,7 @@ class TestCards(unittest.TestCase):
         self.assertLess(self.queen_of_clubs, self.two_of_spades)
         self.assertEqual(self.two_of_spades,  self.two_of_clubs)
         self.assertLess(self.queen_tuple, self.two_tuple)
+        self.assertLess(self.empty_tuple, self.queen_tuple)
 
     def test_tuples(self):
         self.assertEqual(self.seven_tuple.first_card, self.seven_of_diamonds)
